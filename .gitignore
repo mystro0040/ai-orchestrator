@@ -1,0 +1,14 @@
+# runtime state / secrets — never commit
+config.yaml
+secret.key
+*.key
+nonces.txt
+bb/
+webdata/
+*.offset
+orchestrator/logs/*.jsonl
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/

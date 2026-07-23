@@ -1,0 +1,20 @@
+# ai-orchestrator — orchestrator config (copy to config.yaml). All stdlib; pyyaml optional (json works too).
+
+blackboard: ./bb                     # blackboard dir (agents read/write here)
+agents: [manager, tester]            # agent names (each gets inbox/<name>.jsonl + outbox)
+mode: 1                              # 1 minimal · 2 local-continuous · 3 full-three-way
+
+secret_path: ./secret.key            # device secret (from `init-secret`); NEVER on the web host
+pin: null                            # leave null to be prompted at start (do NOT commit a PIN)
+
+# Web app (omit web_url for LOCAL-ONLY: agents cross-talk via blackboard, no remote control)
+web_url: https://your-host.example   # the remote web app base URL
+api_key: PUT-ORCHESTRATOR-API-KEY    # from `show-apikey` on the web app
+poll_interval_s: 5
+
+seen_nonces_path: ./nonces.txt       # replay protection across restarts
+
+# Privileged system actions (e.g. remote shutdown) — OFF by default. Turn on deliberately.
+allow_privileged: false              # master switch for system.* commands
+dry_run: true                        # true = log intent, never execute (flip to false to actually run)
+shutdown_cmd: [sudo, shutdown, -h]   # needs passwordless sudo for this to work headless
