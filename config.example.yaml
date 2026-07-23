@@ -1,7 +1,17 @@
 # ai-orchestrator — orchestrator config (copy to config.yaml). All stdlib; pyyaml optional (json works too).
 
-blackboard: ./bb                     # blackboard dir (agents read/write here)
 agents: [manager, tester]            # agent names (each gets inbox/<name>.jsonl + outbox)
+
+# ── Engagement mode ──────────────────────────────────────────────────────────────────────────────
+# MULTI-engagement (Phase 2): set `engagements` + `hub_root` → each engagement gets its OWN isolated
+# blackboard under hub_root, and web commands must name their `engagement`. The orchestrator registers
+# this list with the web app so the UI lists them. This is what lets you manage several at once.
+hub_root: ./hub
+engagements:
+  - programs/hackerone/bounty/remitly
+  - programs/hackerone/no-bounty/epic-games
+# SINGLE-engagement (legacy): instead of `engagements`, set one `blackboard` + `mode`:
+blackboard: ./bb                     # (ignored when `engagements` is set)
 mode: 1                              # 1 minimal · 2 local-continuous · 3 full-three-way
 
 secret_path: ./secret.key            # device secret (from `init-secret`); NEVER on the web host

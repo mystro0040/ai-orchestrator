@@ -65,16 +65,22 @@ def make_handler(store: WebStore):
 
         # ── routing ────────────────────────────────────────────────────────────
         def do_GET(self):
-            if self.path == "/" or self.path.startswith("/index"):
+            from urllib.parse import urlparse, parse_qs
+            u = urlparse(self.path); path = u.path; q = parse_qs(u.query)
+            if path == "/" or path.startswith("/index"):
                 return self._html(page())
-            if self.path == "/api/queue/pending":
+            if path == "/api/queue/pending":
                 if not self._apikey_ok():
                     return self._json(401, {"error": "bad api key"})
                 return self._json(200, {"pending": store.pending()})
-            if self.path == "/api/logs":
+            if path == "/api/engagements":
+                if not (self._session_ok() or self._apikey_ok()):
+                    return self._json(401, {"error": "unauthorized"})
+                return self._json(200, {"engagements": store.engagements()})
+            if path == "/api/logs":
                 if not self._session_ok():
                     return self._json(401, {"error": "unauthorized"})
-                return self._json(200, {"logs": store.fetch_logs()})
+                return self._json(200, {"logs": store.fetch_logs(engagement=q.get("engagement", [None])[0])})
             return self._json(404, {"error": "not found"})
 
         def do_POST(self):
@@ -98,7 +104,13 @@ def make_handler(store: WebStore):
             if self.path == "/api/logs":
                 if not (self._apikey_ok() or self._session_ok()):
                     return self._json(401, {"error": "unauthorized"})
-                store.push_log(body.get("source", "?"), body.get("body", ""), body.get("level", "info"))
+                store.push_log(body.get("source", "?"), body.get("body", ""), body.get("level", "info"),
+                               engagement=body.get("engagement"))
+                return self._json(200, {"ok": True})
+            if self.path == "/api/engagements":
+                if not self._apikey_ok():
+                    return self._json(401, {"error": "bad api key"})
+                store.set_engagements(body.get("engagements", []))
                 return self._json(200, {"ok": True})
             return self._json(404, {"error": "not found"})
 

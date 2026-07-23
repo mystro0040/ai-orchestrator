@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import os
 import sys
 import time
 
@@ -76,22 +77,33 @@ def cmd_orchestrate(a):
     from .adapters import BlackboardAgentAdapter
     from .core import Orchestrator
     from .webclient import WebClient
+    from .hub import EngagementHub
     cfg = _load_yaml(a.config)
-    bb = Blackboard(cfg["blackboard"]); bb.ensure(mode=cfg.get("mode", 1), agents=cfg.get("agents", []))
-    secret = signing.load_secret(cfg["secret_path"])
+    secret = signing.load_secret(os.path.expanduser(cfg["secret_path"]))
     pin = cfg.get("pin") or getpass.getpass("Orchestrator PIN: ")
-    web = None
-    if cfg.get("web_url"):
-        web = WebClient(cfg["web_url"], cfg["api_key"])
-    adapters = {name: BlackboardAgentAdapter(name, bb) for name in cfg.get("agents", [])}
-    orch = Orchestrator(secret, pin, bb, adapters, web_client=web,
-                        allow_privileged=cfg.get("allow_privileged", False),
-                        dry_run=cfg.get("dry_run", True),
-                        seen_nonces_path=cfg.get("seen_nonces_path"),
-                        shutdown_cmd=cfg.get("shutdown_cmd"))
+    agents = cfg.get("agents", ["manager", "tester"])
+    web = WebClient(cfg["web_url"], cfg["api_key"]) if cfg.get("web_url") else None
+    common = dict(web_client=web, allow_privileged=cfg.get("allow_privileged", False),
+                  dry_run=cfg.get("dry_run", True), seen_nonces_path=cfg.get("seen_nonces_path"),
+                  shutdown_cmd=cfg.get("shutdown_cmd"))
+    engagements = cfg.get("engagements") or []
+    if engagements:                                       # MULTI-engagement mode
+        hub = EngagementHub(os.path.expanduser(cfg.get("hub_root", "./hub")))
+        for e in engagements:
+            hub.register(e, agents=agents)
+        orch = Orchestrator(secret, pin, hub=hub, agent_names=agents,
+                            known_engagements=engagements, **common)
+        if web:
+            web.set_engagements(engagements)              # so the web UI lists them
+        print(f"[+] orchestrating (MULTI): {len(engagements)} engagement(s) {engagements} "
+              f"agents={agents} web={'yes' if web else 'local-only'}")
+    else:                                                 # single-engagement (legacy)
+        bb = Blackboard(os.path.expanduser(cfg["blackboard"])); bb.ensure(mode=cfg.get("mode", 1), agents=agents)
+        adapters = {name: BlackboardAgentAdapter(name, bb) for name in agents}
+        orch = Orchestrator(secret, pin, bb, adapters, **common)
+        print(f"[+] orchestrating (single): mode={int(bb.get_mode())} agents={agents} "
+              f"web={'yes' if web else 'local-only'}")
     interval = int(cfg.get("poll_interval_s", 5))
-    print(f"[+] orchestrating: mode={int(bb.get_mode())} agents={list(adapters)} "
-          f"web={'yes' if web else 'local-only'} privileged={orch.allow_privileged} dry_run={orch.dry_run}")
     if not web:
         print("    (local-only: no web poll; agents cross-talk via the blackboard.)"); return 0
     try:

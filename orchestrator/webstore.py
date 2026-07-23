@@ -134,14 +134,29 @@ class WebStore:
                 fh.write(json.dumps(rec) + "\n")
 
     # ── logs ────────────────────────────────────────────────────────────────
-    def push_log(self, source: str, body: str, level: str = "info", ts: int | None = None) -> None:
+    def push_log(self, source: str, body: str, level: str = "info", ts: int | None = None,
+                 engagement: str | None = None) -> None:
         ts = int(ts if ts is not None else time.time())
+        rec = {"ts": ts, "source": source, "level": level, "body": body}
+        if engagement:
+            rec["engagement"] = engagement
         with open(self.logs_path, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"ts": ts, "source": source, "level": level, "body": body}) + "\n")
+            fh.write(json.dumps(rec) + "\n")
 
-    def fetch_logs(self, limit: int = 100) -> list:
+    def fetch_logs(self, limit: int = 100, engagement: str | None = None) -> list:
         if not os.path.exists(self.logs_path):
             return []
         with open(self.logs_path, encoding="utf-8") as fh:
-            lines = [l.strip() for l in fh if l.strip()]
-        return [json.loads(l) for l in lines[-limit:]]
+            rows = [json.loads(l) for l in fh if l.strip()]
+        if engagement:
+            rows = [r for r in rows if r.get("engagement") == engagement]
+        return rows[-limit:]
+
+    # ── engagement registry (so the UI can list what's manageable) ──────────────
+    def set_engagements(self, names) -> None:
+        cfg = self._load_config()
+        cfg["engagements"] = list(names)
+        self._save_config(cfg)
+
+    def engagements(self) -> list:
+        return self._load_config().get("engagements", [])

@@ -42,6 +42,8 @@ def page() -> str:
    </div>
 
    <div class="card">
+     <label>Engagement</label>
+     <select id="engagement" onchange="loadLogs()"></select>
      <label>Target agent</label>
      <select id="agent"><option>tester</option><option>manager</option></select>
      <label>Command</label><textarea id="cmd" rows="3" placeholder="e.g. status / resume recon"></textarea>
@@ -79,14 +81,20 @@ function hexToBytes(h){const a=new Uint8Array(h.length/2);for(let i=0;i<a.length
 function saveSecret(){localStorage.setItem('ao_secret',$('secret').value.trim());$('secret').value='';alert('Secret saved on this device.');}
 async function login(){
   const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('pw').value})});
-  if(r.ok){TOKEN=(await r.json()).token;$('loginCard').classList.add('hidden');$('app').classList.remove('hidden');loadLogs();}
+  if(r.ok){TOKEN=(await r.json()).token;$('loginCard').classList.add('hidden');$('app').classList.remove('hidden');loadEngagements();loadLogs();}
   else $('loginMsg').innerHTML='<span class="err">Wrong password</span>';
+}
+async function loadEngagements(){
+  const r=await fetch('/api/engagements',{headers:{'X-Session':TOKEN}}); if(!r.ok)return;
+  const engs=(await r.json()).engagements||[];
+  $('engagement').innerHTML=engs.length?engs.map(e=>`<option>${e}</option>`).join(''):'<option value="">(none registered)</option>';
 }
 async function send(type,extra){
   const secret=localStorage.getItem('ao_secret'); const pin=$('pin').value;
   if(!secret){$('sendMsg').innerHTML='<span class="err">Set the device secret first</span>';return;}
   if(!pin){$('sendMsg').innerHTML='<span class="err">Enter your PIN</span>';return;}
   const payload=Object.assign({type},extra||{});
+  if(type!=='system.shutdown'){payload.engagement=$('engagement').value;}
   if(type==='agent.command'){payload.agent=$('agent').value;payload.command=$('cmd').value;}
   const nonce=[...crypto.getRandomValues(new Uint8Array(16))].map(b=>b.toString(16).padStart(2,'0')).join('');
   const ts=Math.floor(Date.now()/1000);
@@ -97,9 +105,10 @@ async function send(type,extra){
   $('pin').value='';
 }
 async function loadLogs(){
-  const r=await fetch('/api/logs',{headers:{'X-Session':TOKEN}}); if(!r.ok)return;
+  const eng=encodeURIComponent($('engagement')?$('engagement').value:'');
+  const r=await fetch('/api/logs'+(eng?('?engagement='+eng):''),{headers:{'X-Session':TOKEN}}); if(!r.ok)return;
   const logs=(await r.json()).logs||[];
-  $('logs').textContent=logs.map(l=>`[${l.source}] ${l.body}`).join('\\n')||'(no logs yet)';
+  $('logs').textContent=logs.map(l=>`[${l.engagement?l.engagement.split('/').pop()+' · ':''}${l.source}] ${l.body}`).join('\\n')||'(no logs yet)';
 }
 setInterval(()=>{if(TOKEN)loadLogs();},8000);
 </script></body></html>"""

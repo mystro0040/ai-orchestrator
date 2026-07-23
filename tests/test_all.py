@@ -11,7 +11,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from orchestrator import (Blackboard, Message, Mode, BlackboardAgentAdapter,  # noqa: E402
-                          Orchestrator, signing, WebStore)
+                          Orchestrator, EngagementHub, signing, WebStore)
 
 TS = "2026-07-22T20:00:00Z"      # fixed timestamps (no Date dependency)
 NOW = 1_753_200_000              # fixed unix "now" for signing freshness
@@ -163,6 +163,61 @@ class TestOrchestrator(unittest.TestCase):
         res = orch.dispatch(env, ts=TS, msg_id="c1", now=NOW)
         self.assertTrue(res["ok"])
         self.assertTrue(res["dry_run"])
+
+
+class TestMultiEngagement(unittest.TestCase):
+    """Phase 2: commands route to the RIGHT engagement's board; isolation + fail-closed."""
+    def _setup(self):
+        d = tempfile.mkdtemp()
+        hub = EngagementHub(os.path.join(d, "hub"))
+        engs = ["programs/hackerone/bounty/remitly", "programs/hackerone/no-bounty/epic-games"]
+        for e in engs:
+            hub.register(e, agents=["manager", "tester"])
+        orch = Orchestrator("ef" * 32, "1234", hub=hub, agent_names=["manager", "tester"],
+                            known_engagements=engs, seen_nonces_path=os.path.join(d, "n.txt"))
+        return hub, orch, engs
+
+    def test_command_routes_to_its_engagement_only(self):
+        hub, orch, (rem, epic) = self._setup()
+        env = signing.sign("ef" * 32, "1234", {"type": "agent.command", "engagement": rem,
+                                               "agent": "tester", "command": "recon rem"}, ts=NOW)
+        res = orch.dispatch(env, ts=TS, msg_id="c1", now=NOW)
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["engagement"], rem)
+        # remitly's tester board got it; epic's did NOT
+        self.assertEqual(len(hub.blackboard(rem).read_inbox("tester")), 1)
+        self.assertEqual(hub.blackboard(epic).read_inbox("tester"), [])
+
+    def test_second_engagement_isolated(self):
+        hub, orch, (rem, epic) = self._setup()
+        env = signing.sign("ef" * 32, "1234", {"type": "agent.command", "engagement": epic,
+                                               "agent": "tester", "command": "recon epic"}, ts=NOW)
+        orch.dispatch(env, ts=TS, msg_id="c1", now=NOW)
+        self.assertEqual(len(hub.blackboard(epic).read_inbox("tester")), 1)
+        self.assertEqual(hub.blackboard(rem).read_inbox("tester"), [])
+
+    def test_unknown_engagement_rejected(self):
+        hub, orch, _ = self._setup()
+        env = signing.sign("ef" * 32, "1234", {"type": "agent.command", "engagement": "programs/nope",
+                                               "agent": "tester", "command": "x"}, ts=NOW)
+        res = orch.dispatch(env, ts=TS, msg_id="c1", now=NOW)
+        self.assertFalse(res["ok"])
+        self.assertIn("engagement", res["reason"])
+
+    def test_missing_engagement_rejected(self):
+        hub, orch, _ = self._setup()
+        env = signing.sign("ef" * 32, "1234", {"type": "agent.command",
+                                               "agent": "tester", "command": "x"}, ts=NOW)
+        res = orch.dispatch(env, ts=TS, msg_id="c1", now=NOW)
+        self.assertFalse(res["ok"])
+
+    def test_forged_still_rejected_in_multi_mode(self):
+        hub, orch, (rem, _) = self._setup()
+        env = signing.sign("ef" * 32, "0000", {"type": "agent.command", "engagement": rem,
+                                               "agent": "tester", "command": "x"}, ts=NOW)   # wrong PIN
+        res = orch.dispatch(env, ts=TS, msg_id="c1", now=NOW)
+        self.assertFalse(res["ok"])
+        self.assertEqual(hub.blackboard(rem).read_inbox("tester"), [])
 
 
 if __name__ == "__main__":

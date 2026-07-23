@@ -41,5 +41,9 @@ class WebClient:
     def ack(self, ids: list) -> dict:
         return self._req("POST", "/api/queue/ack", {"ids": ids})
 
-    def push_log(self, source: str, body: str, level: str = "info") -> dict:
-        return self._req("POST", "/api/logs", {"source": source, "body": body, "level": level})
+    def push_log(self, source: str, body: str, level: str = "info", engagement: str | None = None) -> dict:
+        return self._req("POST", "/api/logs",
+                         {"source": source, "body": body, "level": level, "engagement": engagement})
+
+    def set_engagements(self, names: list) -> dict:
+        return self._req("POST", "/api/engagements", {"engagements": list(names)})

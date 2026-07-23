@@ -124,7 +124,9 @@ class Blackboard:
         with open(self.history_path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(msg.to_dict()) + "\n")
 
-        share = (mode != Mode.MINIMAL) or (msg.kind == "critical")
+        # MINIMAL mode suppresses agent CROSS-TALK, but operator directives (`command`) and
+        # `critical` messages ALWAYS route to the recipient's inbox regardless of mode.
+        share = (mode != Mode.MINIMAL) or (msg.kind in ("critical", "command"))
         if not share:
             return msg
 
