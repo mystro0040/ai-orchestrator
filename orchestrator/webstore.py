@@ -62,6 +62,61 @@ class WebStore:
                                 bytes.fromhex(cfg["salt"]), cfg["iterations"]).hex()
         return secrets.compare_digest(h, cfg["hash"])
 
+    # ── ACCOUNTS (username + password, with a client-derived signing key) ──────
+    #
+    # The browser derives TWO values from the password with PBKDF2 (different info strings):
+    #   auth_token  -> sent here to log in.  We store only a salted hash of it.
+    #   signing_key -> NEVER sent. Stays in the browser and signs commands.
+    # So this host can verify a login but CANNOT derive the signing key, and therefore
+    # still cannot forge a command — the same guarantee the pasted device-secret gave,
+    # without the operator ever handling a 64-char key. The kdf_salt is public by design
+    # (the client needs it before login to derive the same values on any device).
+
+    def account_exists(self) -> bool:
+        return bool(self._load_config().get("account"))
+
+    def account_username(self) -> str | None:
+        acc = self._load_config().get("account") or {}
+        return acc.get("username")
+
+    def kdf_salt(self, username: str) -> str | None:
+        """Public per-account KDF salt so any device can derive the same keys from the password."""
+        acc = self._load_config().get("account") or {}
+        if acc.get("username") != username:
+            return None
+        return acc.get("kdf_salt")
+
+    def register(self, username: str, auth_token: str, kdf_salt: str,
+                 iterations: int = 200_000) -> tuple:
+        """First-run account creation. Returns (ok, reason). Refuses to clobber an existing account."""
+        if not username or not auth_token or not kdf_salt:
+            return False, "username, auth_token and kdf_salt are required"
+        cfg = self._load_config()
+        if cfg.get("account"):
+            return False, "an account already exists"
+        vsalt = secrets.token_hex(16)
+        h = hashlib.pbkdf2_hmac("sha256", auth_token.encode(), bytes.fromhex(vsalt), iterations).hex()
+        cfg["account"] = {"username": username, "kdf_salt": kdf_salt,
+                          "verifier_salt": vsalt, "verifier": h, "iterations": iterations}
+        cfg.setdefault("api_key", secrets.token_hex(24))
+        self._save_config(cfg)
+        return True, "ok"
+
+    def verify_account(self, username: str, auth_token: str) -> bool:
+        acc = self._load_config().get("account") or {}
+        if not acc or acc.get("username") != username:
+            return False
+        h = hashlib.pbkdf2_hmac("sha256", auth_token.encode(),
+                                bytes.fromhex(acc["verifier_salt"]), acc["iterations"]).hex()
+        return secrets.compare_digest(h, acc["verifier"])
+
+    def reset_account(self) -> None:
+        """Wipe the account so the GUI shows first-run registration again."""
+        cfg = self._load_config()
+        cfg.pop("account", None)
+        cfg.pop("password", None)
+        self._save_config(cfg)
+
     def api_key(self) -> str:
         cfg = self._load_config()
         if "api_key" not in cfg:
@@ -92,6 +147,33 @@ class WebStore:
         now = int(now if now is not None else time.time())
         s = self._load_sessions().get(str(token))
         return bool(s) and s.get("expires", 0) > now
+
+
+    # ── command outcomes (so the UI can show the REAL verdict, not just "queued") ──────
+    @property
+    def outcomes_path(self) -> str:
+        return os.path.join(self.root, "outcomes.json")
+
+    def set_outcome(self, cmd_id: str, ok: bool, reason: str = "") -> None:
+        try:
+            with open(self.outcomes_path, encoding="utf-8") as fh:
+                d = json.load(fh)
+        except (OSError, ValueError):
+            d = {}
+        d[str(cmd_id)] = {"ok": bool(ok), "reason": reason, "ts": int(time.time())}
+        # keep it small
+        if len(d) > 200:
+            for k in sorted(d, key=lambda k: d[k]["ts"])[:100]:
+                d.pop(k, None)
+        with open(self.outcomes_path, "w", encoding="utf-8") as fh:
+            json.dump(d, fh)
+
+    def get_outcome(self, cmd_id: str):
+        try:
+            with open(self.outcomes_path, encoding="utf-8") as fh:
+                return json.load(fh).get(str(cmd_id))
+        except (OSError, ValueError):
+            return None
 
     # ── queue ────────────────────────────────────────────────────────────────
     def enqueue(self, envelope: dict, ts: int | None = None, cmd_id: str | None = None) -> str:

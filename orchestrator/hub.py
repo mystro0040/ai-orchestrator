@@ -18,6 +18,17 @@ import os
 from .blackboard import Blackboard, Mode
 
 
+# The MANAGER channel. Always registered, independent of any engagement, so the operator can reach
+# the manager from anywhere without first selecting an engagement. Agents are engagement-scoped
+# (they run inside one); the manager is not. Reserved name — never a real engagement.
+GLOBAL_CHANNEL = "__manager__"
+GLOBAL_LABEL = "Manager (no engagement)"
+
+
+def is_global(name: str) -> bool:
+    return (name or "").strip() == GLOBAL_CHANNEL
+
+
 def slugify(engagement: str) -> str:
     return engagement.strip().strip("/").replace("\\", "/").replace("/", "__")
 

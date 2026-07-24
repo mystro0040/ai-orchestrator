@@ -102,3 +102,15 @@ def verify(secret_hex: str, pin: str, envelope: dict, *, max_age_s: int = 120,
     if seen_nonces is not None:
         seen_nonces.add(nonce)
     return True, "ok"
+
+def derive_account_key(password: str, kdf_salt_hex: str, info: str = "ao-sign") -> str:
+    """Derive the SAME signing key the browser derives, so the orchestrator can verify what the
+    browser signed. Must match ui.py's JS exactly:
+        PBKDF2-HMAC-SHA256(password = f"{password}|{info}", salt = bytes.fromhex(kdf_salt),
+                           iterations = 200_000, dklen = 32) -> hex
+
+    The web host never learns this: the operator's password is entered only here (local orchestrator)
+    and in their own browser. The host stores just a hash of a DIFFERENT derived value ("ao-auth").
+    """
+    return hashlib.pbkdf2_hmac("sha256", f"{password}|{info}".encode(),
+                               bytes.fromhex(kdf_salt_hex), 200_000, dklen=32).hex()

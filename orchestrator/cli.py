@@ -52,6 +52,11 @@ def cmd_show_apikey(a):
     print(WebStore(a.dir).api_key())
 
 
+def cmd_menu(a):
+    from .menu import main as menu_main
+    return menu_main([None, a.config] if getattr(a, "config", None) else [None])
+
+
 def cmd_web(a):
     from .webserver import run
     run(WebStore(a.dir), host=a.host, port=a.port)
@@ -79,15 +84,40 @@ def cmd_orchestrate(a):
     from .webclient import WebClient
     from .hub import EngagementHub
     cfg = _load_yaml(a.config)
-    secret = signing.load_secret(os.path.expanduser(cfg["secret_path"]))
-    pin = cfg.get("pin") or getpass.getpass("Orchestrator PIN: ")
+    # KEY SELECTION — must match whatever the BROWSER signs with.
+    # If a web account exists, the browser derives its signing key from the account password, so the
+    # orchestrator must derive the SAME key (it has local filesystem access to the salt). Falling
+    # back to the device-secret file only when there is no account keeps older setups working.
+    secret = None
+    _store_dir = cfg.get("webstore_dir") or os.path.expanduser("~/.local/share/ao-webstore")
+    try:
+        _st = WebStore(_store_dir)
+        if _st.account_exists():
+            _user = _st.account_username()
+            _salt = _st.kdf_salt(_user)
+            print(f"[i] account '{_user}' found — the browser signs with a key derived from your")
+            print("    password, so enter it here to derive the same key (it never leaves this host).")
+            _pw = os.environ.get("AO_PASSWORD") or getpass.getpass("    Account password: ")
+            secret = signing.derive_account_key(_pw, _salt)
+    except Exception as _e:
+        print(f"[!] account key derivation unavailable ({_e.__class__.__name__}); using secret file")
+    if secret is None:
+        secret = signing.load_secret(os.path.expanduser(cfg["secret_path"]))
+    # PIN precedence: config (least safe, on disk) -> AO_PIN env (menu passes it to a background
+    # child) -> interactive prompt. Env lets the orchestrator run detached without a tty.
+    pin = cfg.get("pin") or os.environ.get("AO_PIN") or getpass.getpass("Orchestrator PIN: ")
     agents = cfg.get("agents", ["manager", "tester"])
     web = WebClient(cfg["web_url"], cfg["api_key"]) if cfg.get("web_url") else None
     common = dict(web_client=web, allow_privileged=cfg.get("allow_privileged", False),
                   dry_run=cfg.get("dry_run", True), seen_nonces_path=cfg.get("seen_nonces_path"),
                   shutdown_cmd=cfg.get("shutdown_cmd"))
-    engagements = cfg.get("engagements") or []
+    engagements = list(cfg.get("engagements") or [])
     if engagements:                                       # MULTI-engagement mode
+        from .hub import GLOBAL_CHANNEL
+        # The manager channel is ALWAYS available and is not an engagement — so the operator can
+        # message the manager without selecting one. Registered first so it heads the UI list.
+        if GLOBAL_CHANNEL not in engagements:
+            engagements.insert(0, GLOBAL_CHANNEL)
         hub = EngagementHub(os.path.expanduser(cfg.get("hub_root", "./hub")))
         for e in engagements:
             hub.register(e, agents=agents)
@@ -123,6 +153,7 @@ def main(argv=None):
     s = sub.add_parser("init-secret"); s.add_argument("path"); s.set_defaults(fn=cmd_init_secret)
     s = sub.add_parser("set-password"); s.add_argument("dir"); s.set_defaults(fn=cmd_set_password)
     s = sub.add_parser("show-apikey"); s.add_argument("dir"); s.set_defaults(fn=cmd_show_apikey)
+    pm = sub.add_parser("menu"); pm.add_argument("config", nargs="?"); pm.set_defaults(fn=cmd_menu)
     s = sub.add_parser("web"); s.add_argument("dir"); s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8787); s.set_defaults(fn=cmd_web)
     s = sub.add_parser("set-mode"); s.add_argument("dir"); s.add_argument("mode", choices=["1", "2", "3"])

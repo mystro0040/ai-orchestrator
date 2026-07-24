@@ -45,5 +45,11 @@ class WebClient:
         return self._req("POST", "/api/logs",
                          {"source": source, "body": body, "level": level, "engagement": engagement})
 
+    def report_outcome(self, cmd_id: str, ok: bool, reason: str = "") -> dict:
+        """Tell the web app whether a queued command actually VERIFIED, so the UI can show the
+        real verdict instead of just 'queued'."""
+        return self._req("POST", "/api/queue/outcome",
+                         {"id": cmd_id, "ok": bool(ok), "reason": reason})
+
     def set_engagements(self, names: list) -> dict:
         return self._req("POST", "/api/engagements", {"engagements": list(names)})

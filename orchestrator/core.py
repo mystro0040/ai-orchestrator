@@ -44,15 +44,29 @@ class Orchestrator:
         self._adapter_cache = {}                       # {(engagement, agent): BlackboardAgentAdapter}
 
     # ── nonce persistence (replay protection across restarts) ──────────────────
+    def _nonce_path(self) -> str | None:
+        """Resolve the configured path: expand `~` and create the parent dir on demand.
+        Without expansion a config value like `~/.config/.../nonces.txt` is taken LITERALLY and
+        every verified command crashes with FileNotFoundError (the `~` dir does not exist)."""
+        if not self.seen_nonces_path:
+            return None
+        p = os.path.expanduser(self.seen_nonces_path)
+        d = os.path.dirname(p)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        return p
+
     def _load_nonces(self) -> set:
-        if self.seen_nonces_path and os.path.exists(self.seen_nonces_path):
-            with open(self.seen_nonces_path, encoding="utf-8") as fh:
+        p = self._nonce_path()
+        if p and os.path.exists(p):
+            with open(p, encoding="utf-8") as fh:
                 return set(l.strip() for l in fh if l.strip())
         return set()
 
     def _persist_nonce(self, nonce: str) -> None:
-        if self.seen_nonces_path:
-            with open(self.seen_nonces_path, "a", encoding="utf-8") as fh:
+        p = self._nonce_path()
+        if p:
+            with open(p, "a", encoding="utf-8") as fh:
                 fh.write(nonce + "\n")
 
     # ── the trust boundary ─────────────────────────────────────────────────────
@@ -155,6 +169,13 @@ class Orchestrator:
             res = self.dispatch(rec["envelope"], ts=now_ts, msg_id=rec.get("id", ""), now=now_unix)
             results.append(res)
             delivered.append(rec.get("id"))
+            # Report the REAL verdict so the operator's UI can show verified vs rejected
+            # (it previously only knew the command had been queued).
+            try:
+                self.web.report_outcome(rec.get("id", ""), bool(res.get("ok")),
+                                        str(res.get("reason", "")))
+            except Exception:
+                pass
         if delivered:
             self.web.ack(delivered)
         self.sync_logs_up()
