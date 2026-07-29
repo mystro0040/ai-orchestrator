@@ -12,3 +12,7 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# CLOUD-ONLY: installed by deploy/install_agent_host.sh on the agent host only.
+# Its ABSENCE here is the security property — see deploy/api_runtime/__init__.py.
+orchestrator/api_runtime/

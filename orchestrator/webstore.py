@@ -124,6 +124,29 @@ class WebStore:
             self._save_config(cfg)
         return cfg["api_key"]
 
+    def rotate_api_key(self) -> tuple:
+        """Replace the relay api_key with a fresh one. Returns (old, new).
+
+        This is the ONLY code path that changes an existing api_key, and it exists because there
+        wasn't one. `set_password` and `register` both use `cfg.setdefault("api_key", ...)`, which
+        writes only when the key is ABSENT — so on a store that already had a key, running
+        set-password left it untouched while appearing to succeed. The documented rotation
+        procedure ("set-password then show-apikey") therefore printed back the same key it started
+        with. A remedy that reports success without doing the work is worse than no remedy, because
+        it retires the task.
+
+        Rotation is deliberately NOT a side effect of set_password: the key also lives in the
+        orchestrator's config.yaml, and silently changing one half of a matched pair would break
+        the orchestrate loop with no obvious cause. Rotating is an explicit act, and the caller is
+        responsible for updating config.yaml to match — `cli.py rotate-apikey` says so out loud.
+        """
+        cfg = self._load_config()
+        old = cfg.get("api_key")
+        new = secrets.token_hex(24)
+        cfg["api_key"] = new
+        self._save_config(cfg)
+        return old, new
+
     def check_api_key(self, key: str) -> bool:
         return bool(key) and secrets.compare_digest(str(key), self.api_key())
 

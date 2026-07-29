@@ -52,14 +52,51 @@ def cmd_show_apikey(a):
     print(WebStore(a.dir).api_key())
 
 
+def cmd_rotate_apikey(a):
+    """Rotate the relay api_key. The ONLY command that changes an existing one.
+
+    `set-password` does NOT rotate it — it uses setdefault, so on a store that already has a key it
+    leaves it alone while looking like it worked. If you are here because a key leaked, this is the
+    command that actually replaces it.
+    """
+    store = WebStore(a.dir)
+    old, new = store.rotate_api_key()
+    if old is None:
+        print("[i] no previous api_key in this store — one has been created.")
+    else:
+        print(f"[+] api_key rotated. old ...{old[-6:]}  ->  new ...{new[-6:]}")
+    print(f"    new key: {new}")
+    print()
+    print("    NOT DONE YET — the key lives in TWO places and they must match:")
+    print(f"      1. this store            {store.config_path}   (just updated)")
+    print("      2. the orchestrator config  config.yaml -> api_key:   (update it now)")
+    print("    Until both match, the orchestrate loop cannot talk to the web relay.")
+    if old is not None:
+        print()
+        print("    Treat the old key as burned. If it reached a repo, rotating here does not remove")
+        print("    it from git history — it only makes the copy in that history useless.")
+
+
 def cmd_menu(a):
     from .menu import main as menu_main
     return menu_main([None, a.config] if getattr(a, "config", None) else [None])
 
 
 def cmd_web(a):
+    from . import auth_boundary
+    auth_boundary.assert_boundary("web")      # FIRST LINE. Before any socket is opened.
     from .webserver import run
     run(WebStore(a.dir), host=a.host, port=a.port)
+
+
+def cmd_auth_status(a):
+    """Report the credential boundary without enforcing it. Safe to run anywhere, exits 0 or 1."""
+    from . import auth_boundary
+    print("\n-------- Anthropic credential boundary --------")
+    out = auth_boundary.describe()
+    print(out)
+    print("-----------------------------------------------")
+    return 1 if ("BLOCKED" in out or "(NONE)" in out) else 0
 
 
 def cmd_set_mode(a):
@@ -79,6 +116,8 @@ def cmd_status(a):
 
 
 def cmd_orchestrate(a):
+    from . import auth_boundary
+    auth_boundary.assert_boundary("orchestrate")   # FIRST LINE. Before any agent work.
     from .adapters import BlackboardAgentAdapter
     from .core import Orchestrator
     from .webclient import WebClient
@@ -153,6 +192,8 @@ def main(argv=None):
     s = sub.add_parser("init-secret"); s.add_argument("path"); s.set_defaults(fn=cmd_init_secret)
     s = sub.add_parser("set-password"); s.add_argument("dir"); s.set_defaults(fn=cmd_set_password)
     s = sub.add_parser("show-apikey"); s.add_argument("dir"); s.set_defaults(fn=cmd_show_apikey)
+    s = sub.add_parser("rotate-apikey", help="replace the relay api_key (set-password does NOT)")
+    s.add_argument("dir"); s.set_defaults(fn=cmd_rotate_apikey)
     pm = sub.add_parser("menu"); pm.add_argument("config", nargs="?"); pm.set_defaults(fn=cmd_menu)
     s = sub.add_parser("web"); s.add_argument("dir"); s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8787); s.set_defaults(fn=cmd_web)
@@ -160,6 +201,8 @@ def main(argv=None):
     s.set_defaults(fn=cmd_set_mode)
     s = sub.add_parser("status"); s.add_argument("dir"); s.set_defaults(fn=cmd_status)
     s = sub.add_parser("orchestrate"); s.add_argument("config"); s.set_defaults(fn=cmd_orchestrate)
+    s = sub.add_parser("auth-status", help="report the Anthropic credential boundary for this host")
+    s.set_defaults(fn=cmd_auth_status)
     a = p.parse_args(argv)
     return a.fn(a) or 0
 
