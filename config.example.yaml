@@ -8,8 +8,8 @@ agents: [manager, tester]            # agent names (each gets inbox/<name>.jsonl
 # this list with the web app so the UI lists them. This is what lets you manage several at once.
 hub_root: ./hub
 engagements:
-  - programs/hackerone/bounty/remitly
-  - programs/hackerone/no-bounty/epic-games
+  - programs/hackerone/bounty/example-one
+  - programs/hackerone/no-bounty/example-two
 # SINGLE-engagement (legacy): instead of `engagements`, set one `blackboard` + `mode`:
 blackboard: ./bb                     # (ignored when `engagements` is set)
 mode: 1                              # 1 minimal · 2 local-continuous · 3 full-three-way

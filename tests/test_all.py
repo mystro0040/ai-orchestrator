@@ -170,7 +170,7 @@ class TestMultiEngagement(unittest.TestCase):
     def _setup(self):
         d = tempfile.mkdtemp()
         hub = EngagementHub(os.path.join(d, "hub"))
-        engs = ["programs/hackerone/bounty/remitly", "programs/hackerone/no-bounty/epic-games"]
+        engs = ["programs/hackerone/bounty/example-one", "programs/hackerone/no-bounty/example-two"]
         for e in engs:
             hub.register(e, agents=["manager", "tester"])
         orch = Orchestrator("ef" * 32, "1234", hub=hub, agent_names=["manager", "tester"],
@@ -184,7 +184,7 @@ class TestMultiEngagement(unittest.TestCase):
         res = orch.dispatch(env, ts=TS, msg_id="c1", now=NOW)
         self.assertTrue(res["ok"], res)
         self.assertEqual(res["engagement"], rem)
-        # remitly's tester board got it; epic's did NOT
+        # engagement one's tester board got it; engagement two's did NOT
         self.assertEqual(len(hub.blackboard(rem).read_inbox("tester")), 1)
         self.assertEqual(hub.blackboard(epic).read_inbox("tester"), [])
 

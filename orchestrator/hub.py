@@ -8,7 +8,7 @@ layer too — a command/log for engagement A never lands in engagement B's board
 
     <hub_root>/<slug>/{state.yaml, recent.md, history.jsonl, inbox/, outbox/}
 
-Slug: the engagement name (e.g. "programs/hackerone/bounty/remitly") with path separators flattened
+Slug: the engagement name (e.g. "programs/hackerone/bounty/example-one") with path separators flattened
 to "__" so it's one directory — reversible and collision-free.
 """
 from __future__ import annotations
