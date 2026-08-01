@@ -128,7 +128,12 @@ def cmd_orchestrate(a):
     # orchestrator must derive the SAME key (it has local filesystem access to the salt). Falling
     # back to the device-secret file only when there is no account keeps older setups working.
     secret = None
-    _store_dir = cfg.get("webstore_dir") or os.path.expanduser("~/.local/share/ao-webstore")
+    # expanduser the CONFIG value too, not only the default. Without it a perfectly ordinary
+    # `webstore_dir: ~/.local/share/ao-webstore` was abspath'd against the cwd, WebStore then
+    # created a literal `~` directory inside the repo, found no account in it, and silently fell
+    # back to the device secret — so every browser-signed message failed with "bad signature" and
+    # nothing said why. Cost an evening on 2026-08-01.
+    _store_dir = os.path.expanduser(cfg.get("webstore_dir") or "~/.local/share/ao-webstore")
     try:
         _st = WebStore(_store_dir)
         if _st.account_exists():
